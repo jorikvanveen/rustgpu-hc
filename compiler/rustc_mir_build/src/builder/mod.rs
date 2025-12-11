@@ -52,6 +52,7 @@ pub(crate) fn closure_saved_names_of_captured_variables<'tcx>(
         .collect()
 }
 
+// NOTE(jorik): This is where mir building actually happens
 /// Create the MIR for a given `DefId`, including unreachable code. Do not call
 /// this directly; instead use the cached version via `mir_built`.
 pub fn build_mir<'tcx>(tcx: TyCtxt<'tcx>, def: LocalDefId) -> Body<'tcx> {

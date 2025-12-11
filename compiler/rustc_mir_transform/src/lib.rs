@@ -377,6 +377,7 @@ fn mir_const_qualif(tcx: TyCtxt<'_>, def: LocalDefId) -> ConstQualifs {
     validator.qualifs_in_return_place()
 }
 
+// NOTE(jorik): this is where MIR is built
 fn mir_built(tcx: TyCtxt<'_>, def: LocalDefId) -> &Steal<Body<'_>> {
     let mut body = build_mir(tcx, def);
 
@@ -402,6 +403,7 @@ fn mir_built(tcx: TyCtxt<'_>, def: LocalDefId) -> &Steal<Body<'_>> {
     tcx.alloc_steal_mir(body)
 }
 
+// NOTE(jorik): this is where constant promotion begins
 /// Compute the main MIR body and the list of MIR bodies of the promoteds.
 fn mir_promoted(
     tcx: TyCtxt<'_>,
@@ -797,6 +799,7 @@ fn optimized_mir<'tcx>(tcx: TyCtxt<'tcx>, did: LocalDefId) -> &'tcx Body<'tcx> {
     tcx.arena.alloc(optimized_mir_inner(tcx, did))
 }
 
+// NOTE(jorik): Lang item swap in kernel MIR
 /// Optimize the MIR and prepare it for codegen.
 /// specifically for kernel code
 fn optimized_kernel_mir<'tcx>(tcx: TyCtxt<'tcx>, did: DefId) -> &'tcx Body<'tcx> {

@@ -104,6 +104,7 @@ pub fn provide(providers: &mut Providers) {
     *providers = Providers { mir_borrowck, ..*providers };
 }
 
+// NOTE(jorik): this is where borrow checking starts
 /// Provider for `query mir_borrowck`. Similar to `typeck`, this must
 /// only be called for typeck roots which will then borrowck all
 /// nested bodies as well.
