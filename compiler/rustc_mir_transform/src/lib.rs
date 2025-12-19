@@ -57,6 +57,9 @@ mod lint_tail_expr_drop_order;
 mod patch;
 mod shim;
 mod ssa;
+mod kernel;
+
+pub use kernel::*;
 
 /// We import passes via this macro so that we can have a static list of pass names
 /// (used to verify CLI arguments). It takes a list of modules, followed by the passes
@@ -210,8 +213,10 @@ pub fn provide(providers: &mut Providers) {
     ffi_unwind_calls::provide(providers);
     shim::provide(providers);
     cross_crate_inline::provide(providers);
+    kernel::provide(providers);
     providers.queries = query::Providers {
         mir_keys,
+        mir_base,
         mir_built,
         mir_const_qualif,
         mir_promoted,
@@ -219,7 +224,6 @@ pub fn provide(providers: &mut Providers) {
         mir_for_ctfe,
         mir_coroutine_witnesses: coroutine::mir_coroutine_witnesses,
         optimized_mir,
-        optimized_kernel_mir,
         is_mir_available,
         is_ctfe_mir_available: is_mir_available,
         mir_callgraph_reachable: inline::cycle::mir_callgraph_reachable,
@@ -229,6 +233,31 @@ pub fn provide(providers: &mut Providers) {
         coroutine_by_move_body_def_id: coroutine::coroutine_by_move_body_def_id,
         ..providers.queries
     };
+}
+
+fn mir_base<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def: LocalDefId,
+) -> &'tcx Body<'_> {
+    let mut body = build_mir(tcx, def);
+
+    pass_manager::dump_mir_for_phase_change(tcx, &body);
+
+    pm::run_passes(
+        tcx,
+        &mut body,
+        &[
+            // MIR-level lints.
+            &Lint(check_inline::CheckForceInline),
+            &Lint(check_call_recursion::CheckCallRecursion),
+            &Lint(check_packed_ref::CheckPackedRef),
+            &Lint(check_const_item_mutation::CheckConstItemMutation),
+            &Lint(function_item_references::FunctionItemReferences),
+        ],
+        None,
+        pm::Optimizations::Allowed,
+    );
+    tcx.arena.alloc(body)
 }
 
 fn remap_mir_for_const_eval_select<'tcx>(
@@ -379,29 +408,23 @@ fn mir_const_qualif(tcx: TyCtxt<'_>, def: LocalDefId) -> ConstQualifs {
 
 // NOTE(jorik): this is where MIR is built
 fn mir_built(tcx: TyCtxt<'_>, def: LocalDefId) -> &Steal<Body<'_>> {
-    let mut body = build_mir(tcx, def);
-
-    pass_manager::dump_mir_for_phase_change(tcx, &body);
+    let mut body = tcx.mir_base(def).clone();
 
     pm::run_passes(
         tcx,
         &mut body,
         &[
-            // MIR-level lints.
-            &Lint(check_inline::CheckForceInline),
-            &Lint(check_call_recursion::CheckCallRecursion),
-            &Lint(check_packed_ref::CheckPackedRef),
-            &Lint(check_const_item_mutation::CheckConstItemMutation),
-            &Lint(function_item_references::FunctionItemReferences),
+            // TODO(jorik): Add extra pass for target selection
             // What we need to do constant evaluation.
-            &simplify::SimplifyCfg::Initial,
-            &Lint(sanity_check::SanityCheck),
+            &simplify::SimplifyCfg::Initial, // NOTE(jorik) separate into another stage
+            &Lint(sanity_check::SanityCheck), // this one too
         ],
         None,
         pm::Optimizations::Allowed,
     );
     tcx.alloc_steal_mir(body)
 }
+
 
 // NOTE(jorik): this is where constant promotion begins
 /// Compute the main MIR body and the list of MIR bodies of the promoteds.
@@ -545,9 +568,7 @@ fn mir_drops_elaborated_and_const_checked(tcx: TyCtxt<'_>, def: LocalDefId) -> &
     run_analysis_to_runtime_passes(tcx, &mut body);
 
     tcx.alloc_steal_mir(body)
-}
-
-// Made public so that `mir_drops_elaborated_and_const_checked` can be overridden
+}// Made public so that `mir_drops_elaborated_and_const_checked` can be overridden
 // by custom rustc drivers, running all the steps by themselves. See #114628.
 pub fn run_analysis_to_runtime_passes<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
     assert!(body.phase == MirPhase::Analysis(AnalysisPhase::Initial));
@@ -799,21 +820,7 @@ fn optimized_mir<'tcx>(tcx: TyCtxt<'tcx>, did: LocalDefId) -> &'tcx Body<'tcx> {
     tcx.arena.alloc(optimized_mir_inner(tcx, did))
 }
 
-// NOTE(jorik): Lang item swap in kernel MIR
-/// Optimize the MIR and prepare it for codegen.
-/// specifically for kernel code
-fn optimized_kernel_mir<'tcx>(tcx: TyCtxt<'tcx>, did: DefId) -> &'tcx Body<'tcx> {
-    // get the normal optimized mir
-    let mut body = tcx.optimized_mir(did).clone();
 
-    let kernel_swap_pass = KernelLangItemSwap::new(tcx);
-    kernel_swap_pass.run_pass(tcx, &mut body);
-
-    // RemoveDropGlue.run_pass(tcx, &mut body);
-    AbortUnwindingCalls.run_pass_for_device_code(tcx, &mut body);
-
-    tcx.arena.alloc(body)
-}
 
 /// Fetch all the promoteds of an item and prepare their MIR bodies to be ready for
 /// constant evaluation once all generic parameters become known.
@@ -832,20 +839,4 @@ fn promoted_mir(tcx: TyCtxt<'_>, def: LocalDefId) -> &IndexVec<Promoted, Body<'_
     }
 
     tcx.arena.alloc(promoted)
-}
-
-/// same as promoted mir, but actually returns the result in a kernel context
-/// instead of passing it to the kernel compiler
-fn promoted_kernel_mir(tcx: TyCtxt<'_>, def: LocalDefId) -> &IndexVec<Promoted, Body<'_>> {
-    let mut promoted = tcx.mir_promoted(def).1.steal();
-
-    for body in &mut promoted {
-        run_analysis_to_runtime_passes(tcx, body);
-    }
-
-    tcx.arena.alloc(promoted)
-}
-
-pub fn optimize_generated_kernel_mir<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) {
-    RequiredConstsVisitor::compute_required_consts(body);
 }

@@ -1746,6 +1746,7 @@ impl<'tcx> TyCtxt<'tcx> {
         }
     }
 
+    // NOTE(jorik) some kernel specific stuf happens here
     /// Returns the possibly-auto-generated MIR of a [`ty::InstanceKind`].
     #[instrument(skip(self), level = "debug")]
     pub fn instance_mir(self, instance: ty::InstanceKind<'tcx>) -> &'tcx Body<'tcx> {

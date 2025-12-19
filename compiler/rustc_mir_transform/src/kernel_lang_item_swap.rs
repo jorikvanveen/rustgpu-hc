@@ -91,7 +91,7 @@ impl<'tcx> MirPass<'tcx> for KernelLangItemSwap {
                     }
                     _ => None,
                 };
-                
+
 
                 if let Some(callee_def_id) = callee_def_id_opt {
                     println!(

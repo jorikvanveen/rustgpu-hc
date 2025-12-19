@@ -642,12 +642,37 @@ rustc_queries! {
         separate_provide_extern
     }
 
+    /// Maps DefId's that have an associated `mir::Body` to the result
+    /// of the MIR const-checking pass. This is the set of qualifs in
+    /// the final value of a `const`.
+    query mir_const_qualif_kernel(key: DefId) -> mir::ConstQualifs {
+        desc { |tcx| "const checking kernel `{}`", tcx.def_path_str(key) }
+        cache_on_disk_if { key.is_local() }
+    }
+
+    query mir_base(key: DefId) -> &'tcx mir::Body<'tcx> {
+        desc { |tcx| "building base mir before taget slection for  `{}`", tcx.def_path_str(key) }
+        cache_on_disk_if { key.is_local() }
+        separate_provide_extern
+    }
+
     /// Build the MIR for a given `DefId` and prepare it for const qualification.
     ///
     /// See the [rustc dev guide] for more info.
     ///
     /// [rustc dev guide]: https://rustc-dev-guide.rust-lang.org/mir/construction.html
     query mir_built(key: LocalDefId) -> &'tcx Steal<mir::Body<'tcx>> {
+        desc { |tcx| "building MIR for `{}`", tcx.def_path_str(key) }
+        feedable
+    }
+
+    /// Build the MIR for a given `DefId` and prepare it for const qualification.
+    ///
+    /// See the [rustc dev guide] for more info.
+    ///
+    /// NOTE(jorik) hier een is_kernel
+    /// [rustc dev guide]: https://rustc-dev-guide.rust-lang.org/mir/construction.html
+    query mir_built_kernel(key: DefId) -> &'tcx Steal<mir::Body<'tcx>> {
         desc { |tcx| "building MIR for `{}`", tcx.def_path_str(key) }
         feedable
     }
@@ -667,6 +692,12 @@ rustc_queries! {
         desc { |tcx| "elaborating drops for `{}`", tcx.def_path_str(key) }
     }
 
+    query mir_drops_elaborated_and_const_checked_kernel(key: DefId) -> &'tcx Steal<mir::Body<'tcx>> {
+        no_hash
+        desc { |tcx| "elaborating kernel drops for `{}`", tcx.def_path_str(key) }
+    }
+
+
     query mir_for_ctfe(
         key: DefId
     ) -> &'tcx mir::Body<'tcx> {
@@ -676,6 +707,14 @@ rustc_queries! {
     }
 
     query mir_promoted(key: LocalDefId) -> (
+        &'tcx Steal<mir::Body<'tcx>>,
+        &'tcx Steal<IndexVec<mir::Promoted, mir::Body<'tcx>>>
+    ) {
+        no_hash
+        desc { |tcx| "promoting constants in MIR for `{}`", tcx.def_path_str(key) }
+    }
+
+    query mir_promoted_kernel(key: DefId) -> (
         &'tcx Steal<mir::Body<'tcx>>,
         &'tcx Steal<IndexVec<mir::Promoted, mir::Body<'tcx>>>
     ) {

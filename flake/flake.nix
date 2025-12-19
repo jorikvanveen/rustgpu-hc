@@ -14,6 +14,7 @@
           cmake
           rustup
           clang
+          fluent-bit
         ];
       };
     }
